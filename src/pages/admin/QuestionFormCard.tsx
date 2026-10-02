@@ -67,15 +67,61 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
 
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   async function handleUpload(file: File, onUrl: (url: string) => void) {
     setUploading(true);
+    setUploadError(null);
     try {
       const url = await uploadQuestionImage(file, type.toLowerCase());
       onUrl(url);
+    } catch (err) {
+      // Firebase Storage needs the Blaze plan on newer projects, so uploads
+      // can fail on an otherwise perfectly working setup. Say so plainly and
+      // point at the URL field, which works regardless.
+      const code = typeof err === 'object' && err && 'code' in err ? String((err as { code: string }).code) : '';
+      setUploadError(
+        code.includes('unauthorized') || code.includes('unknown')
+          ? 'Upload failed - Firebase Storage may not be enabled on this project. Paste an image URL instead.'
+          : err instanceof Error
+            ? err.message
+            : 'Upload failed. Paste an image URL instead.'
+      );
     } finally {
       setUploading(false);
     }
+  }
+
+  /** Lets images be added by URL when Storage isn't available. */
+  function ImageUrlAdder({ onAdd }: { onAdd: (url: string) => void }) {
+    const [value, setValue] = useState('');
+    return (
+      <div className="row" style={{ marginTop: 6 }}>
+        <input
+          placeholder="...or paste an image URL"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && value.trim()) {
+              e.preventDefault();
+              onAdd(value.trim());
+              setValue('');
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="btn btn-sm btn-outline"
+          disabled={!value.trim()}
+          onClick={() => {
+            onAdd(value.trim());
+            setValue('');
+          }}
+        >
+          Add URL
+        </button>
+      </div>
+    );
   }
 
   async function handleSave() {
@@ -214,6 +260,7 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
               accept="image/*"
               onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0], setImageUrl)}
             />
+            <ImageUrlAdder onAdd={setImageUrl} />
           </div>
           {type === 'MULTIPLE_CHOICE' && (
             <div className="field">
@@ -251,6 +298,7 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
               accept="image/*"
               onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0], (url) => setImageUrls([...imageUrls, url]))}
             />
+            <ImageUrlAdder onAdd={(url) => setImageUrls((prev) => [...prev, url])} />
           </div>
           <div className="field">
             <label>Correct answer</label>
@@ -322,6 +370,7 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
               accept="image/*"
               onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0], (url) => setFileUrls([...fileUrls, url]))}
             />
+            <ImageUrlAdder onAdd={(url) => setFileUrls((prev) => [...prev, url])} />
           </div>
           <div className="field">
             <label>Time limit (seconds)</label>
@@ -336,6 +385,12 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
           Active (eligible to appear in games)
         </label>
       </div>
+
+      {uploadError && (
+        <p className="badge badge-live" style={{ display: 'inline-block' }}>
+          {uploadError}
+        </p>
+      )}
 
       <div className="row">
         <button className="btn btn-primary" onClick={handleSave} disabled={saving || uploading}>
