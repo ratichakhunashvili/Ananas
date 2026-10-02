@@ -1,0 +1,87 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function role() {
+      return isSignedIn() ? myProfile().role : null;
+    }
+
+    function isAdmin() {
+      return role() == 'admin';
+    }
+
+    // User profiles. Only Admin can create/modify/remove accounts.
+    // A signed-in user may always read their own profile (needed to know their role/team).
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
+    // username -> synthetic-email lookup, read before sign-in so the login form
+    // can resolve "username" into the Firebase Auth email it was registered with.
+    // Contains no password or secret data.
+    match /usernames/{username} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /categories/{categoryId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Questions hold correct answers. Never readable by teams/spectators -
+    // the live game only ever exposes a sanitized projection via Realtime Database.
+    match /questions/{questionId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /musicLibrary/{trackId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /games/{gameId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+
+      match /teams/{teamId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin();
+      }
+
+      // Ordering/selection of questions for a game is admin-only: it can reveal
+      // upcoming question order/topics, which should stay a surprise.
+      match /gameQuestions/{gqId} {
+        allow read, write: if isAdmin();
+      }
+
+      // Score history is visible to everyone (transparency for disputes).
+      // Entries can never be edited - a correction is a new, compensating
+      // entry, so the trail of what actually happened stays intact and a
+      // disputed score can always be reconstructed. Delete is permitted only
+      // because removing a whole draft game cascades to its events; that is an
+      // explicit, confirmed, whole-game action, not a silent edit.
+      match /scoreEvents/{eventId} {
+        allow read: if isSignedIn();
+        allow create: if isAdmin();
+        allow update: if false;
+        allow delete: if isAdmin();
+      }
+
+      match /auditLog/{entryId} {
+        allow read, write: if isAdmin();
+      }
+    }
+  }
+}

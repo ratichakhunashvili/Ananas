@@ -1,0 +1,59 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "rolesIndex": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid === $uid || root.child('rolesIndex').child(auth.uid).val() === 'admin')",
+        ".write": "auth != null && root.child('rolesIndex').child(auth.uid).val() === 'admin'",
+        ".validate": "newData.isString() && (newData.val() === 'admin' || newData.val() === 'team' || newData.val() === 'spectator')"
+      }
+    },
+
+    "rosterIndex": {
+      "$gameId": {
+        ".read": "auth != null",
+        "$uid": {
+          ".write": "auth != null && root.child('rolesIndex').child(auth.uid).val() === 'admin'",
+          ".validate": "newData.isString()"
+        }
+      }
+    },
+
+    "liveMusic": {
+      "$gameId": {
+        ".read": "auth != null && (root.child('rolesIndex').child(auth.uid).val() === 'admin' || root.child('rolesIndex').child(auth.uid).val() === 'spectator')",
+        ".write": "auth != null && root.child('rolesIndex').child(auth.uid).val() === 'admin'"
+      }
+    },
+
+    "liveGames": {
+      "$gameId": {
+        ".read": "auth != null",
+        ".write": "auth != null && root.child('rolesIndex').child(auth.uid).val() === 'admin'",
+
+        "buzzer": {
+          "$gqId": {
+            ".validate": "newData.hasChild('open')",
+
+            "claim": {
+              ".write": "auth != null && root.child('rolesIndex').child(auth.uid).val() === 'team' && root.child('liveGames').child($gameId).child('status').val() === 'LIVE' && root.child('liveGames').child($gameId).child('buzzer').child($gqId).child('open').val() === true && ( !root.child('liveGames').child($gameId).child('currentQuestion').child('endsAt').exists() || now < root.child('liveGames').child($gameId).child('currentQuestion').child('endsAt').val() ) && !data.exists() && !root.child('liveGames').child($gameId).child('buzzer').child($gqId).child('attempts').child(root.child('rosterIndex').child($gameId).child(auth.uid).val()).exists()",
+              ".validate": "root.child('rolesIndex').child(auth.uid).val() === 'admin' || ( newData.hasChildren(['uid','teamId','at']) && newData.child('uid').val() === auth.uid && newData.child('teamId').val() === root.child('rosterIndex').child($gameId).child(auth.uid).val() && newData.child('at').val() === now )"
+            }
+          }
+        }
+      }
+    },
+
+    "presence": {
+      "$gameId": {
+        ".read": "auth != null",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid",
+          ".validate": "!newData.exists() || newData.hasChildren(['teamId','at'])"
+        }
+      }
+    }
+  }
+}
