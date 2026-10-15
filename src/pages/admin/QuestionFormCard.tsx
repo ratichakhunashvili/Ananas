@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useBusyAction } from '../../hooks/useBusyAction';
 import type { Category, Difficulty, DistributiveOmit, MusicTrack, Question, QuestionType } from '../../types';
 import { answerLength, createQuestion, updateQuestion, uploadQuestionImage } from '../../services/questionService';
 
@@ -11,6 +12,56 @@ const TYPES: { value: QuestionType; label: string }[] = [
 ];
 
 const TIMER_PRESETS = [0, 15, 30, 60, 120];
+
+// Firestore caps a whole document at 1 MiB. A pasted data: URL (e.g. "Copy
+// image address" on some Google Images results) is stored inline and can
+// blow straight past that, so overly long URLs are rejected up front.
+const MAX_IMAGE_URL_LENGTH = 100_000;
+
+function imageUrlProblem(url: string): string | null {
+  if (url.length > MAX_IMAGE_URL_LENGTH) {
+    return 'That image URL is too large to store (it is probably an embedded data: image). Use a normal https:// link to the image instead.';
+  }
+  return null;
+}
+
+/**
+ * Lets images be added by URL when Storage isn't available. Lives at module
+ * level and is controlled by the form: declared inside the form it was a new
+ * component type on every render, so React remounted it and wiped the
+ * half-typed URL whenever any other field changed.
+ */
+function ImageUrlAdder({
+  value,
+  onChange,
+  onAdd,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onAdd: (url: string) => void;
+}) {
+  const add = () => {
+    if (value.trim()) onAdd(value.trim());
+  };
+  return (
+    <div className="row" style={{ marginTop: 6 }}>
+      <input
+        placeholder="...or paste an image URL"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            add();
+          }
+        }}
+      />
+      <button type="button" className="btn btn-sm btn-outline" disabled={!value.trim()} onClick={add}>
+        Add URL
+      </button>
+    </div>
+  );
+}
 
 interface Props {
   categories: Category[];
@@ -66,8 +117,12 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
   );
 
   const [uploading, setUploading] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [saving, runSave] = useBusyAction();
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Text in the "paste an image URL" box not yet added. Only one image
+  // section is visible at a time (it depends on the type), so one is enough.
+  const [pendingUrl, setPendingUrl] = useState('');
 
   async function handleUpload(file: File, onUrl: (url: string) => void) {
     setUploading(true);
@@ -92,45 +147,43 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
     }
   }
 
-  /** Lets images be added by URL when Storage isn't available. */
-  function ImageUrlAdder({ onAdd }: { onAdd: (url: string) => void }) {
-    const [value, setValue] = useState('');
-    return (
-      <div className="row" style={{ marginTop: 6 }}>
-        <input
-          placeholder="...or paste an image URL"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && value.trim()) {
-              e.preventDefault();
-              onAdd(value.trim());
-              setValue('');
-            }
-          }}
-        />
-        <button
-          type="button"
-          className="btn btn-sm btn-outline"
-          disabled={!value.trim()}
-          onClick={() => {
-            onAdd(value.trim());
-            setValue('');
-          }}
-        >
-          Add URL
-        </button>
-      </div>
-    );
+  function addImageUrl(url: string, add: (url: string) => void) {
+    const problem = imageUrlProblem(url);
+    if (problem) {
+      setUploadError(problem);
+      return;
+    }
+    setUploadError(null);
+    add(url);
+    setPendingUrl('');
   }
 
-  async function handleSave() {
-    setSaving(true);
-    try {
+  function handleSave() {
+    return runSave(async () => {
+      setSaveError(null);
+
+      // A URL pasted into the box but never "Add"-ed is clearly meant to be
+      // part of the question - include it rather than silently dropping it.
+      const pending = pendingUrl.trim();
+      let image = imageUrl;
+      let images = imageUrls;
+      let files = fileUrls;
+      if (pending) {
+        const problem = imageUrlProblem(pending);
+        if (problem) {
+          setSaveError(problem);
+          return;
+        }
+        if (type === 'TEXT' || type === 'MULTIPLE_CHOICE') image = pending;
+        else if (type === 'PHOTO_ASSOCIATION') images = [...imageUrls, pending];
+        else if (type === 'PROBLEM_CASE') files = [...fileUrls, pending];
+      }
+
       const base = {
         categoryId: categoryId || null,
-        points: Number(points),
-        timerSeconds: timerSeconds,
+        points: Number(points) || 0,
+        // An emptied custom timer input yields 0/NaN; treat both as "no timer".
+        timerSeconds: timerSeconds && Number.isFinite(timerSeconds) ? timerSeconds : null,
         difficulty: difficulty || null,
         active,
         order: existing?.order ?? Date.now(),
@@ -143,27 +196,45 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
           ...base,
           type,
           text,
-          imageUrl,
+          imageUrl: image,
           choices: type === 'MULTIPLE_CHOICE' ? choicesText.split('\n').map((s) => s.trim()).filter(Boolean) : null,
           correctAnswer,
         };
       } else if (type === 'PHOTO_ASSOCIATION') {
-        payload = { ...base, type, imageUrls, correctAnswer };
+        payload = { ...base, type, imageUrls: images, correctAnswer };
       } else if (type === 'MUSIC_GUESS') {
-        payload = { ...base, type, musicTrackId, startSeconds: Number(startSeconds), playbackDurationSeconds };
+        payload = {
+          ...base,
+          type,
+          musicTrackId,
+          startSeconds: Number(startSeconds) || 0,
+          playbackDurationSeconds,
+        };
       } else {
-        payload = { ...base, type, title: caseTitle, description, fileUrls, timeLimitSeconds: Number(timeLimitSeconds) };
+        payload = {
+          ...base,
+          type,
+          title: caseTitle,
+          description,
+          fileUrls: files,
+          timeLimitSeconds: Number(timeLimitSeconds) || 0,
+        };
       }
 
-      if (existing) {
-        await updateQuestion(existing.id, payload);
-      } else {
-        await createQuestion(payload);
+      try {
+        if (existing) {
+          await updateQuestion(existing.id, payload);
+        } else {
+          await createQuestion(payload);
+        }
+        setPendingUrl('');
+        onDone();
+      } catch (err) {
+        // This used to be an unhandled rejection: the button flicked back to
+        // "Save question" and nothing said why the question wasn't saved.
+        setSaveError(`Could not save the question: ${err instanceof Error ? err.message : String(err)}`);
       }
-      onDone();
-    } finally {
-      setSaving(false);
-    }
+    });
   }
 
   return (
@@ -260,7 +331,7 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
               accept="image/*"
               onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0], setImageUrl)}
             />
-            <ImageUrlAdder onAdd={setImageUrl} />
+            <ImageUrlAdder value={pendingUrl} onChange={setPendingUrl} onAdd={(url) => addImageUrl(url, setImageUrl)} />
           </div>
           {type === 'MULTIPLE_CHOICE' && (
             <div className="field">
@@ -298,7 +369,11 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
               accept="image/*"
               onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0], (url) => setImageUrls([...imageUrls, url]))}
             />
-            <ImageUrlAdder onAdd={(url) => setImageUrls((prev) => [...prev, url])} />
+            <ImageUrlAdder
+              value={pendingUrl}
+              onChange={setPendingUrl}
+              onAdd={(url) => addImageUrl(url, (u) => setImageUrls((prev) => [...prev, u]))}
+            />
           </div>
           <div className="field">
             <label>Correct answer</label>
@@ -370,7 +445,11 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
               accept="image/*"
               onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0], (url) => setFileUrls([...fileUrls, url]))}
             />
-            <ImageUrlAdder onAdd={(url) => setFileUrls((prev) => [...prev, url])} />
+            <ImageUrlAdder
+              value={pendingUrl}
+              onChange={setPendingUrl}
+              onAdd={(url) => addImageUrl(url, (u) => setFileUrls((prev) => [...prev, u]))}
+            />
           </div>
           <div className="field">
             <label>Time limit (seconds)</label>
@@ -389,6 +468,12 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
       {uploadError && (
         <p className="badge badge-live" style={{ display: 'inline-block' }}>
           {uploadError}
+        </p>
+      )}
+
+      {saveError && (
+        <p className="badge badge-live" style={{ display: 'inline-block' }}>
+          {saveError}
         </p>
       )}
 

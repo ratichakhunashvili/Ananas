@@ -34,6 +34,10 @@ export const db = getFirestore(app);
 // blank crashed page, so fall back to a syntactically valid placeholder URL.
 export const rtdb = getDatabase(app, isFirebaseConfigured ? undefined : 'https://unconfigured.firebaseio.com');
 export const storage = getStorage(app);
+// The SDK default keeps retrying a failing upload for 10 minutes, and the
+// question form's Save button stays disabled the whole time. Fail fast so the
+// form can say so and the URL field can be used instead.
+storage.maxUploadRetryTime = 30_000;
 
 export const USERNAME_DOMAIN =
   (import.meta.env.VITE_AUTH_USERNAME_DOMAIN as string | undefined) || 'ananas.local';
