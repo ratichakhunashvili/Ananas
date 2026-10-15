@@ -11,8 +11,10 @@ import {
 } from 'firebase/firestore';
 import { ref, remove, set } from 'firebase/database';
 import { signOut as firebaseSignOut, createUserWithEmailAndPassword, getAuth } from 'firebase/auth';
+import { httpsCallable } from 'firebase/functions';
 import {
   db,
+  functions,
   rtdb,
   USERNAME_DOMAIN,
   getSecondaryAuthApp,
@@ -107,6 +109,15 @@ export async function createTeamWithLogin(input: CreateTeamInput): Promise<strin
   });
 
   return teamRef.id;
+}
+
+export async function resetTeamPassword(gameId: string, teamId: string): Promise<string> {
+  const reset = httpsCallable<{ gameId: string; teamId: string }, { password: string }>(
+    functions,
+    'resetTeamPassword'
+  );
+  const result = await reset({ gameId, teamId });
+  return result.data.password;
 }
 
 export async function updateTeam(

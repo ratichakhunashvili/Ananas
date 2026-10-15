@@ -21,10 +21,13 @@ share that team's buzzer and score. See **Architecture notes** below.
 - Firestore - durable data (accounts, teams, question bank, categories,
   music library, games, score history, audit log)
 - Firebase Storage - question images / problem-case files
+- Firebase Cloud Functions - privileged team-password resets using the
+  Admin SDK; passwords are returned to the Admin once and never stored
 - Plain CSS (`src/styles/global.css`) using the Ananas brand tokens
 
-No backend server and no Cloud Functions are used - see **Architecture
-notes** below for why, and what that trades off.
+Most app operations use the Firebase client SDK and Security Rules. The
+password-reset callable is the only server-side operation; see **Architecture
+notes** below.
 
 ## Firebase project setup
 
@@ -46,7 +49,16 @@ notes** below for why, and what that trades off.
    This pushes `firestore.rules`, `firestore.indexes.json`, `database.rules.json`,
    and `storage.rules` - all mandatory. The app will not behave correctly
    (and is not safe) without these deployed.
-5. (Optional) To search for music by name in the Admin Music Library, enable
+5. To enable team-password resets, link the Firebase project to the
+   [Blaze plan](https://firebase.google.com/pricing) and deploy the callable:
+   ```
+   npm install --prefix functions
+   firebase deploy --only functions:resetTeamPassword
+   ```
+   The function verifies the caller's Admin profile and team ownership before
+   resetting the Firebase Auth password. It returns the new password once;
+   it is never persisted.
+6. (Optional) To search for music by name in the Admin Music Library, enable
    the **YouTube Data API v3** in Google Cloud Console for the same project
    (or any project) and create an API key. Without it, Admin can still add
    tracks by pasting a YouTube URL directly.
@@ -73,11 +85,15 @@ VITE_YOUTUBE_API_KEY=
 
 ```
 npm install
+npm install --prefix functions
 npm run dev
 ```
 
 Open the printed localhost URL. Until `.env.local` is filled in, the app
 shows a "Firebase isn't configured yet" screen instead of crashing.
+With `VITE_USE_FIREBASE_EMULATORS=true`, start the Auth, Firestore, Realtime
+Database, Storage, and Functions emulators with
+`firebase emulators:start --only auth,firestore,database,storage,functions`.
 
 ## Creating the first Admin account
 
@@ -147,28 +163,28 @@ normal, intended flow.
   `database.rules.json` independently re-enforces the same invariants
   (buzzer must be open; this team hasn't already had a turn this question)
   server-side, so a modified client still can't force a win.
-- **No Cloud Functions.** The brief's tech stack list is Auth + Realtime
-  Database + Firestore + Storage, and Cloud Functions need a paid (Blaze)
-  plan and a separate deploy step, so this intentionally stays client-SDK +
-  Security Rules only:
-  - Role checks (`isAdmin()`) are enforced in `firestore.rules` and
-    `database.rules.json`, reading each user's role from Firestore/a small
-    RTDB `rolesIndex` mirror - not Firebase Auth custom claims, which can
-    only be set server-side.
-  - Creating a team or spectator login from the Admin UI uses a disposable
-    secondary Firebase App instance purely to call
-    `createUserWithEmailAndPassword` without hijacking the Admin's own
-    signed-in session (the normal client SDK would otherwise switch the
-    current session to the newly created user).
-  - "Deleting" a team or spectator (Admin → Teams/Spectators → Delete) removes
-    the `usernames/{name}` lookup doc immediately, which blocks that login's
-    next sign-in attempt outright, and cleans up the rest of its Firestore/RTDB
-    footprint. It does **not** delete the underlying Firebase Auth record -
-    the client SDK cannot delete another user's account. A real purge would
-    need a small Admin SDK script in the same style as
-    `scripts/createAdmin.mjs` (using `admin.auth().deleteUser(uid)`); not
-    built out here since it's an off-event housekeeping task, not something
-    needed during a live game.
+- **Team-password reset is server-side.** Firebase Auth never returns an
+  existing password, and the client SDK cannot change another user's
+  password. The callable `functions.resetTeamPassword` checks the caller's
+  Firestore Admin profile, verifies the selected team and team profile match,
+  updates the password using the Admin SDK, and returns the replacement once.
+  The Admin UI keeps it only in memory for copying/sharing; it is not stored.
+  Deploying Cloud Functions requires the Firebase Blaze plan.
+- Role checks for normal client operations (`isAdmin()`) are enforced in
+  `firestore.rules` and `database.rules.json`, reading each user's role from
+  Firestore/a small RTDB `rolesIndex` mirror - not Firebase Auth custom claims.
+- Creating a team or spectator login from the Admin UI uses a disposable
+  secondary Firebase App instance purely to call
+  `createUserWithEmailAndPassword` without hijacking the Admin's own signed-in
+  session (the normal client SDK would otherwise switch the current session
+  to the newly created user).
+- "Deleting" a team or spectator (Admin → Teams/Spectators → Delete) removes
+  the `usernames/{name}` lookup doc immediately, which blocks that login's
+  next sign-in attempt outright, and cleans up the rest of its Firestore/RTDB
+  footprint. It does **not** delete the underlying Firebase Auth record -
+  the client SDK cannot delete another user's account. A real purge would
+  need an Admin-SDK deletion operation, not built out here since it's an
+  off-event housekeeping task.
 - **Music/karaoke audio plays on exactly one device: the Spectator screen**
   (the one assumed to be connected to the room's speakers/projector). Admin
   and every team's phone only ever show a synced visual indicator (▶/⏸,
@@ -199,12 +215,10 @@ normal, intended flow.
   are still `DRAFT` (never started), so a played game's history can't be
   wiped out by accident; there's no bulk-purge of Firebase Auth accounts
   from the UI (see the Cloud Functions note above).
-- **Team passwords cannot be recovered or reset from the app.** Firebase
-  never returns a password, and the client SDK can't reset another user's.
-  The Teams tab therefore shows every login it creates in a "copy all" panel
-  at the moment of creation - that is the only chance to record them. Losing
-  one means deleting and recreating that team (which loses its score), or
-  writing an Admin-SDK reset script.
+- **Team passwords cannot be recovered.** Firebase never returns a password.
+  Admins can reset a team's password from the Teams tab; the new password is
+  shown once in the session's copyable credentials panel. The old password
+  stops working immediately, and the app never stores either password.
 - `usernames/{name}` is readable without signing in, because the login form
   has to resolve a username to its account before authenticating. That lets
   someone confirm a username exists; it exposes no secret, and the generated

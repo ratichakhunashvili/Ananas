@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
 import { usePresence, useTeams } from '../../../hooks/dataHooks';
-import { createTeamWithLogin, deleteTeam, updateTeam } from '../../../services/teamService';
+import { createTeamWithLogin, deleteTeam, resetTeamPassword, updateTeam } from '../../../services/teamService';
 import { awardPoints } from '../../../services/scoreService';
 import { useBusyAction } from '../../../hooks/useBusyAction';
 
@@ -19,6 +19,7 @@ function slugify(name: string): string {
 }
 
 interface IssuedCredential {
+  teamId: string;
   teamName: string;
   username: string;
   password: string;
@@ -40,6 +41,7 @@ export function TeamsTab({ gameId }: { gameId: string }) {
   // dismisses it) is what makes handing out logins to a room actually workable.
   const [issued, setIssued] = useState<IssuedCredential[]>([]);
   const [copied, setCopied] = useState(false);
+  const [resettingId, setResettingId] = useState<string | null>(null);
 
   const [busy, run] = useBusyAction();
   const [adjustingId, setAdjustingId] = useState<string | null>(null);
@@ -61,7 +63,7 @@ export function TeamsTab({ gameId }: { gameId: string }) {
     setCreating(true);
     setError(null);
     try {
-      await createTeamWithLogin({
+      const teamId = await createTeamWithLogin({
         gameId,
         name: name.trim(),
         username: effectiveUsername,
@@ -71,7 +73,7 @@ export function TeamsTab({ gameId }: { gameId: string }) {
       });
       setIssued((prev) => [
         ...prev,
-        { teamName: name.trim(), username: effectiveUsername, password: password.trim() },
+        { teamId, teamName: name.trim(), username: effectiveUsername, password: password.trim() },
       ]);
       setName('');
       setUsername('');
@@ -80,6 +82,27 @@ export function TeamsTab({ gameId }: { gameId: string }) {
       setError(err instanceof Error ? err.message : 'Could not create team.');
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleResetPassword(teamId: string, teamName: string, teamUsername: string | null) {
+    if (!profile || !teamUsername) return;
+    if (!confirm(`Reset the password for "${teamName}"? The current password will stop working immediately.`)) {
+      return;
+    }
+
+    setResettingId(teamId);
+    setError(null);
+    try {
+      const newPassword = await resetTeamPassword(gameId, teamId);
+      setIssued((prev) => [
+        ...prev.filter((credential) => credential.teamId !== teamId),
+        { teamId, teamName, username: teamUsername, password: newPassword },
+      ]);
+    } catch (err) {
+      setError(`Could not reset ${teamName}'s password: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setResettingId(null);
     }
   }
 
@@ -171,7 +194,7 @@ export function TeamsTab({ gameId }: { gameId: string }) {
       {issued.length > 0 && (
         <div className="card" style={{ borderColor: 'var(--color-accent)' }}>
           <div className="spread" style={{ marginBottom: 8 }}>
-            <div className="title-md">Logins created this session</div>
+            <div className="title-md">Team passwords set this session</div>
             <div className="row">
               <button className="btn btn-sm btn-accent" onClick={copyAll}>
                 {copied ? 'Copied!' : 'Copy all'}
@@ -182,7 +205,7 @@ export function TeamsTab({ gameId }: { gameId: string }) {
             </div>
           </div>
           <p className="muted" style={{ marginBottom: 10 }}>
-            Write these down or copy them now - passwords cannot be shown again after you leave this page.
+            Copy or share these now. Passwords are only shown here until you dismiss this list or leave the page.
           </p>
           <table>
             <thead>
@@ -253,6 +276,13 @@ export function TeamsTab({ gameId }: { gameId: string }) {
               <div className="row" style={{ marginTop: 10 }}>
                 <button className="btn btn-sm btn-outline" onClick={() => setAdjustingId(team.id)}>
                   Adjust score
+                </button>
+                <button
+                  className="btn btn-sm btn-outline"
+                  disabled={resettingId === team.id || !team.uid || !team.username}
+                  onClick={() => handleResetPassword(team.id, team.name, team.username)}
+                >
+                  {resettingId === team.id ? 'Resetting...' : 'Reset password'}
                 </button>
                 <button
                   className="btn btn-sm btn-outline"

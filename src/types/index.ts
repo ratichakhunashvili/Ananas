@@ -187,7 +187,8 @@ export type AuditAction =
   | 'CASE_SCORED'
   | 'TEAM_CREATED'
   | 'TEAM_UPDATED'
-  | 'TEAM_DELETED';
+  | 'TEAM_DELETED'
+  | 'TEAM_PASSWORD_RESET';
 
 export interface AuditLogEntry {
   id: string;

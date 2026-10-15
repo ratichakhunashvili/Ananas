@@ -3,6 +3,7 @@ import { getAuth, connectAuthEmulator } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getDatabase, connectDatabaseEmulator } from 'firebase/database';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
+import { getFunctions, connectFunctionsEmulator } from 'firebase/functions';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -28,6 +29,7 @@ if (!isFirebaseConfigured) {
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const functions = getFunctions(app, 'us-central1');
 // A malformed/missing databaseURL throws synchronously inside getDatabase().
 // When config isn't set up yet we still want the app to boot far enough to
 // show the setup screen (see src/pages/SetupNeededPage.tsx) instead of a
@@ -67,5 +69,6 @@ if (import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') {
     connectFirestoreEmulator(db, '127.0.0.1', 8080);
     connectDatabaseEmulator(rtdb, '127.0.0.1', 9000);
     connectStorageEmulator(storage, '127.0.0.1', 9199);
+    connectFunctionsEmulator(functions, '127.0.0.1', 5001);
   }
 }

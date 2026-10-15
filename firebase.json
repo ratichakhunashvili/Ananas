@@ -1,4 +1,8 @@
 {
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs20"
+  },
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
@@ -15,6 +19,7 @@
     "rewrites": [{ "source": "**", "destination": "/index.html" }]
   },
   "emulators": {
+    "functions": { "port": 5001 },
     "auth": { "port": 9099 },
     "firestore": { "port": 8080 },
     "database": { "port": 9000 },
