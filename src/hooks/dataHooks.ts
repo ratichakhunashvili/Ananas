@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { AuditLogEntry, Category, Game, GameQuestion, MusicTrack, Question, ScoreEvent, Team, UserProfile } from '../types';
 import type { LiveGameMeta } from '../types/live';
-import { listenTeams } from '../services/teamService';
+import { listenTeamCredentials, listenTeams } from '../services/teamService';
 import { listenCategories } from '../services/categoryService';
 import { listenQuestions } from '../services/questionService';
 import { listenMusicLibrary } from '../services/musicService';
@@ -28,6 +28,18 @@ export function useTeams(gameId: string | null | undefined): Team[] {
     return listenTeams(gameId, setTeams);
   }, [gameId]);
   return teams;
+}
+
+export function useTeamCredentials(gameId: string | null | undefined): Record<string, string> {
+  const [credentials, setCredentials] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!gameId) {
+      setCredentials({});
+      return;
+    }
+    return listenTeamCredentials(gameId, setCredentials);
+  }, [gameId]);
+  return credentials;
 }
 
 export function useCategories(): Category[] {

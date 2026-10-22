@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { StoredImage } from '../../components/StoredImage';
 import { useBusyAction } from '../../hooks/useBusyAction';
 import type { Category, Difficulty, DistributiveOmit, MusicTrack, Question, QuestionType } from '../../types';
 import { answerLength, createQuestion, updateQuestion, uploadQuestionImage } from '../../services/questionService';
@@ -124,24 +125,19 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
   // section is visible at a time (it depends on the type), so one is enough.
   const [pendingUrl, setPendingUrl] = useState('');
 
-  async function handleUpload(file: File, onUrl: (url: string) => void) {
+  async function handleUpload(input: HTMLInputElement, onUrl: (url: string) => void) {
+    const files = Array.from(input.files ?? []);
+    // Clear the picker so choosing the same file again still fires onChange.
+    input.value = '';
+    if (files.length === 0) return;
     setUploading(true);
     setUploadError(null);
     try {
-      const url = await uploadQuestionImage(file, type.toLowerCase());
-      onUrl(url);
+      for (const file of files) {
+        onUrl(await uploadQuestionImage(file, type.toLowerCase()));
+      }
     } catch (err) {
-      // Firebase Storage needs the Blaze plan on newer projects, so uploads
-      // can fail on an otherwise perfectly working setup. Say so plainly and
-      // point at the URL field, which works regardless.
-      const code = typeof err === 'object' && err && 'code' in err ? String((err as { code: string }).code) : '';
-      setUploadError(
-        code.includes('unauthorized') || code.includes('unknown')
-          ? 'Upload failed - Firebase Storage may not be enabled on this project. Paste an image URL instead.'
-          : err instanceof Error
-            ? err.message
-            : 'Upload failed. Paste an image URL instead.'
-      );
+      setUploadError(`Image upload failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setUploading(false);
     }
@@ -325,11 +321,11 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
           </div>
           <div className="field">
             <label>Image (optional)</label>
-            {imageUrl && <img src={imageUrl} alt="" style={{ maxHeight: 140, marginBottom: 8 }} />}
+            {imageUrl && <StoredImage src={imageUrl} style={{ maxHeight: 140, marginBottom: 8 }} />}
             <input
               type="file"
               accept="image/*"
-              onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0], setImageUrl)}
+              onChange={(e) => handleUpload(e.target, setImageUrl)}
             />
             <ImageUrlAdder value={pendingUrl} onChange={setPendingUrl} onAdd={(url) => addImageUrl(url, setImageUrl)} />
           </div>
@@ -353,7 +349,7 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
             <div className="image-grid" style={{ marginBottom: 8 }}>
               {imageUrls.map((url, i) => (
                 <div key={url} style={{ position: 'relative' }}>
-                  <img src={url} alt="" />
+                  <StoredImage src={url} />
                   <button
                     className="icon-btn"
                     style={{ position: 'absolute', top: 4, right: 4 }}
@@ -367,7 +363,8 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
             <input
               type="file"
               accept="image/*"
-              onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0], (url) => setImageUrls([...imageUrls, url]))}
+              multiple
+              onChange={(e) => handleUpload(e.target, (url) => setImageUrls((prev) => [...prev, url]))}
             />
             <ImageUrlAdder
               value={pendingUrl}
@@ -429,7 +426,7 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
             <div className="image-grid" style={{ marginBottom: 8 }}>
               {fileUrls.map((url, i) => (
                 <div key={url} style={{ position: 'relative' }}>
-                  <img src={url} alt="" />
+                  <StoredImage src={url} />
                   <button
                     className="icon-btn"
                     style={{ position: 'absolute', top: 4, right: 4 }}
@@ -443,7 +440,8 @@ export function QuestionFormCard({ categories, musicTracks, existing, onDone, ac
             <input
               type="file"
               accept="image/*"
-              onChange={(e) => e.target.files?.[0] && handleUpload(e.target.files[0], (url) => setFileUrls([...fileUrls, url]))}
+              multiple
+              onChange={(e) => handleUpload(e.target, (url) => setFileUrls((prev) => [...prev, url]))}
             />
             <ImageUrlAdder
               value={pendingUrl}

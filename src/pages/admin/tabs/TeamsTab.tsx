@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../../../contexts/AuthContext';
-import { usePresence, useTeams } from '../../../hooks/dataHooks';
+import { usePresence, useTeamCredentials, useTeams } from '../../../hooks/dataHooks';
 import { createTeamWithLogin, deleteTeam, resetTeamPassword, updateTeam } from '../../../services/teamService';
 import { awardPoints } from '../../../services/scoreService';
 import { useBusyAction } from '../../../hooks/useBusyAction';
@@ -28,6 +28,7 @@ interface IssuedCredential {
 export function TeamsTab({ gameId }: { gameId: string }) {
   const { profile } = useAuth();
   const teams = useTeams(gameId);
+  const teamCredentials = useTeamCredentials(gameId);
   const presence = usePresence(gameId);
 
   const [name, setName] = useState('');
@@ -36,9 +37,8 @@ export function TeamsTab({ gameId }: { gameId: string }) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Firebase never gives a password back, so the only chance to record it is
-  // the moment it's set. Keeping the issued list on screen (until the teacher
-  // dismisses it) is what makes handing out logins to a room actually workable.
+  // Keep recently created/reset credentials handy for copying; the current
+  // password is also stored in the admin-only credentials collection.
   const [issued, setIssued] = useState<IssuedCredential[]>([]);
   const [copied, setCopied] = useState(false);
   const [resettingId, setResettingId] = useState<string | null>(null);
@@ -205,7 +205,7 @@ export function TeamsTab({ gameId }: { gameId: string }) {
             </div>
           </div>
           <p className="muted" style={{ marginBottom: 10 }}>
-            Copy or share these now. Passwords are only shown here until you dismiss this list or leave the page.
+            Copy or share these credentials. The current password also appears beside each team below.
           </p>
           <table>
             <thead>
@@ -247,6 +247,12 @@ export function TeamsTab({ gameId }: { gameId: string }) {
               <div className="title-md">{team.score} pts</div>
             </div>
             <div className="muted">Login: {team.username}</div>
+            <div className="muted" style={{ marginTop: 4 }}>
+              Password:{' '}
+              <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--color-text)' }}>
+                {teamCredentials[team.id] ?? 'Not stored — reset to set a password'}
+              </span>
+            </div>
 
             {adjustingId === team.id ? (
               <div className="stack" style={{ marginTop: 10 }}>
@@ -279,7 +285,7 @@ export function TeamsTab({ gameId }: { gameId: string }) {
                 </button>
                 <button
                   className="btn btn-sm btn-outline"
-                  disabled={resettingId === team.id || !team.uid || !team.username}
+                  disabled={resettingId !== null || !team.uid || !team.username}
                   onClick={() => handleResetPassword(team.id, team.name, team.username)}
                 >
                   {resettingId === team.id ? 'Resetting...' : 'Reset password'}

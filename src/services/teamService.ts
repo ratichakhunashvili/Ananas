@@ -6,8 +6,8 @@ import {
   onSnapshot,
   orderBy,
   query,
-  setDoc,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 import { ref, remove, set } from 'firebase/database';
 import { signOut as firebaseSignOut, createUserWithEmailAndPassword, getAuth } from 'firebase/auth';
@@ -80,7 +80,6 @@ export async function createTeamWithLogin(input: CreateTeamInput): Promise<strin
     disabled: false,
     createdAt: Date.now(),
   };
-  await setDoc(teamRef, team);
 
   const profile: UserProfile = {
     uid,
@@ -94,8 +93,15 @@ export async function createTeamWithLogin(input: CreateTeamInput): Promise<strin
     createdAt: Date.now(),
     createdBy: input.actorUid,
   };
-  await setDoc(doc(db, 'users', uid), profile);
-  await setDoc(doc(db, 'usernames', key), { uid, email });
+  const batch = writeBatch(db);
+  batch.set(teamRef, team);
+  batch.set(doc(db, 'users', uid), profile);
+  batch.set(doc(db, 'usernames', key), { uid, email });
+  batch.set(doc(db, 'games', input.gameId, 'teamCredentials', teamRef.id), {
+    password: input.password,
+    updatedAt: Date.now(),
+  });
+  await batch.commit();
 
   await set(ref(rtdb, `rolesIndex/${uid}`), 'team');
   await set(ref(rtdb, `rosterIndex/${input.gameId}/${uid}`), teamRef.id);
@@ -118,6 +124,17 @@ export async function resetTeamPassword(gameId: string, teamId: string): Promise
   );
   const result = await reset({ gameId, teamId });
   return result.data.password;
+}
+
+export function listenTeamCredentials(gameId: string, cb: (credentials: Record<string, string>) => void): () => void {
+  return onSnapshot(collection(db, 'games', gameId, 'teamCredentials'), (snap) => {
+    const credentials: Record<string, string> = {};
+    for (const credential of snap.docs) {
+      const password = credential.data().password;
+      if (typeof password === 'string') credentials[credential.id] = password;
+    }
+    cb(credentials);
+  });
 }
 
 export async function updateTeam(
@@ -160,6 +177,7 @@ export async function deleteTeam(
     await updateDoc(doc(db, 'users', team.uid), { disabled: true }).catch(() => undefined);
     await remove(ref(rtdb, `rosterIndex/${gameId}/${team.uid}`)).catch(() => undefined);
   }
+  await deleteDoc(doc(db, 'games', gameId, 'teamCredentials', teamId));
   await deleteDoc(doc(db, 'games', gameId, 'teams', teamId));
 
   await logAudit({

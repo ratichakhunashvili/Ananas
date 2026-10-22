@@ -22,7 +22,7 @@ share that team's buzzer and score. See **Architecture notes** below.
   music library, games, score history, audit log)
 - Firebase Storage - question images / problem-case files
 - Firebase Cloud Functions - privileged team-password resets using the
-  Admin SDK; passwords are returned to the Admin once and never stored
+  Admin SDK
 - Plain CSS (`src/styles/global.css`) using the Ananas brand tokens
 
 Most app operations use the Firebase client SDK and Security Rules. The
@@ -56,8 +56,8 @@ notes** below.
    firebase deploy --only functions:resetTeamPassword
    ```
    The function verifies the caller's Admin profile and team ownership before
-   resetting the Firebase Auth password. It returns the new password once;
-   it is never persisted.
+   resetting the Firebase Auth password. The new password is saved in a
+   separate admin-only Firestore collection.
 6. (Optional) To search for music by name in the Admin Music Library, enable
    the **YouTube Data API v3** in Google Cloud Console for the same project
    (or any project) and create an API key. Without it, Admin can still add
@@ -167,9 +167,11 @@ normal, intended flow.
   existing password, and the client SDK cannot change another user's
   password. The callable `functions.resetTeamPassword` checks the caller's
   Firestore Admin profile, verifies the selected team and team profile match,
-  updates the password using the Admin SDK, and returns the replacement once.
-  The Admin UI keeps it only in memory for copying/sharing; it is not stored.
-  Deploying Cloud Functions requires the Firebase Blaze plan.
+  updates the password using the Admin SDK, and saves the replacement under
+  `games/{gameId}/teamCredentials/{teamId}`. Firestore rules restrict this
+  collection to admins; credentials are deliberately stored in recoverable
+  plaintext, so Firebase project admins and authorized app admins can access
+  them. Deploying Cloud Functions requires the Firebase Blaze plan.
 - Role checks for normal client operations (`isAdmin()`) are enforced in
   `firestore.rules` and `database.rules.json`, reading each user's role from
   Firestore/a small RTDB `rolesIndex` mirror - not Firebase Auth custom claims.
@@ -215,10 +217,10 @@ normal, intended flow.
   are still `DRAFT` (never started), so a played game's history can't be
   wiped out by accident; there's no bulk-purge of Firebase Auth accounts
   from the UI (see the Cloud Functions note above).
-- **Team passwords cannot be recovered.** Firebase never returns a password.
-  Admins can reset a team's password from the Teams tab; the new password is
-  shown once in the session's copyable credentials panel. The old password
-  stops working immediately, and the app never stores either password.
+- **Team passwords are visible only to admins.** Passwords are stored in a
+  separate Firestore collection covered by admin-only rules and are displayed
+  beside each team in the Admin Teams tab. Passwords created before this
+  feature cannot be recovered; reset those teams to store their new password.
 - `usernames/{name}` is readable without signing in, because the login form
   has to resolve a username to its account before authenticating. That lets
   someone confirm a username exists; it exposes no secret, and the generated

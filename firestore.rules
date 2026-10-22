@@ -46,6 +46,13 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
+    // Uploaded question / problem-case images (compressed data URLs). Admin-only
+    // like questions: they can reveal upcoming questions. Contestants receive
+    // the images through the live RTDB projection once a question starts.
+    match /questionImages/{imageId} {
+      allow read, write: if isAdmin();
+    }
+
     match /musicLibrary/{trackId} {
       allow read: if isSignedIn();
       allow write: if isAdmin();
@@ -58,6 +65,12 @@ service cloud.firestore {
       match /teams/{teamId} {
         allow read: if isSignedIn();
         allow write: if isAdmin();
+      }
+
+      // Shared team passwords are stored separately from team records and
+      // must never be readable by team or spectator accounts.
+      match /teamCredentials/{teamId} {
+        allow read, write: if isAdmin();
       }
 
       // Ordering/selection of questions for a game is admin-only: it can reveal

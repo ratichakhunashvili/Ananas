@@ -53,7 +53,13 @@ export const USERNAME_DOMAIN =
  */
 export function getSecondaryAuthApp(): FirebaseApp {
   const name = `secondary-${Date.now()}`;
-  return initializeApp(firebaseConfig, name);
+  const secondary = initializeApp(firebaseConfig, name);
+  // Without this, team creation against the emulators hits the real Auth
+  // service with the placeholder API key and fails.
+  if (import.meta.env.VITE_USE_FIREBASE_EMULATORS === 'true') {
+    connectAuthEmulator(getAuth(secondary), 'http://127.0.0.1:9099', { disableWarnings: true });
+  }
+  return secondary;
 }
 
 export async function disposeSecondaryAuthApp(app: FirebaseApp): Promise<void> {

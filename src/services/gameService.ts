@@ -10,7 +10,7 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore';
-import { ref, onValue, set, update, remove } from 'firebase/database';
+import { ref, get, onValue, set, update, remove } from 'firebase/database';
 import { db, rtdb } from '../lib/firebase';
 import { estimatedServerNow } from '../lib/serverTime';
 import type { Game, GameQuestion, Question } from '../types';
@@ -22,7 +22,7 @@ import type {
   LiveQuestionState,
 } from '../types/live';
 import { logAudit } from './auditService';
-import { answerLength } from './questionService';
+import { answerLength, resolveImageSrc, resolveImageSrcs } from './questionService';
 import { awardPoints } from './scoreService';
 import type { MusicTrack, Team } from '../types';
 
@@ -232,6 +232,24 @@ async function setGameQuestionStatus(gameId: string, gqId: string, status: GameQ
 // Question flow (TEXT / MULTIPLE_CHOICE / PHOTO_ASSOCIATION / MUSIC_GUESS)
 // ---------------------------------------------------------------------------
 
+/**
+ * Swaps `qimg:` references (images stored in the admin-only questionImages
+ * collection) for the image data itself, so the RTDB projection carries
+ * something contestants' and spectators' screens can display directly.
+ */
+async function withResolvedImages<Q extends Question>(question: Q): Promise<Q> {
+  if (question.type === 'TEXT' || question.type === 'MULTIPLE_CHOICE') {
+    return { ...question, imageUrl: question.imageUrl ? await resolveImageSrc(question.imageUrl) : null };
+  }
+  if (question.type === 'PHOTO_ASSOCIATION') {
+    return { ...question, imageUrls: await resolveImageSrcs(question.imageUrls) };
+  }
+  if (question.type === 'PROBLEM_CASE') {
+    return { ...question, fileUrls: await resolveImageSrcs(question.fileUrls) };
+  }
+  return question;
+}
+
 function buildSanitizedQuestion(
   gq: GameQuestion,
   question: Question,
@@ -289,7 +307,9 @@ export async function startQuestion(
     throw new Error('Problem cases use startProblemCase, not startQuestion.');
   }
 
-  const liveQuestion = buildSanitizedQuestion(gq, question, categoryName);
+  // Resolve stored images first, so fetching them doesn't eat into the timer
+  // (startedAt/endsAt are stamped inside buildSanitizedQuestion).
+  const liveQuestion = buildSanitizedQuestion(gq, await withResolvedImages(question), categoryName);
 
   const updates: Record<string, unknown> = {
     currentQuestion: liveQuestion,
@@ -477,13 +497,14 @@ export async function startProblemCase(
   actorUid: string,
   actorName: string
 ): Promise<void> {
+  const fileUrls = await resolveImageSrcs(question.fileUrls);
   const now = estimatedServerNow();
   const state: LiveProblemCaseState = {
     active: true,
     gameQuestionId: gq.id,
     title: question.title,
     description: question.description,
-    fileUrls: question.fileUrls,
+    fileUrls,
     phase: 'prep',
     startedAt: now,
     endsAt: now + question.timeLimitSeconds * 1000,
@@ -636,10 +657,20 @@ export async function scoreKaraoke(
 
 export async function resetRosterIndexForGame(gameId: string): Promise<void> {
   const usersSnap = await getDocs(query(collection(db, 'users'), where('gameId', '==', gameId)));
-  const updates: Record<string, string> = {};
+  // database.rules.json only grants writes at rosterIndex/$gameId/$uid, so a
+  // set() of the whole game node is denied (which made "Run homework" fail).
+  // A multi-path update is checked per child path instead; stale entries are
+  // cleared with explicit nulls.
+  const updates: Record<string, string | null> = {};
+  const existing = await get(ref(rtdb, `rosterIndex/${gameId}`));
+  existing.forEach((child) => {
+    if (child.key) updates[child.key] = null;
+  });
   usersSnap.docs.forEach((d) => {
     const data = d.data();
     if (data.teamId) updates[d.id] = data.teamId as string;
   });
-  await set(ref(rtdb, `rosterIndex/${gameId}`), updates);
+  if (Object.keys(updates).length > 0) {
+    await update(ref(rtdb, `rosterIndex/${gameId}`), updates);
+  }
 }

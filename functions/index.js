@@ -51,7 +51,28 @@ exports.resetTeamPassword = onCall({ region: 'us-central1' }, async (request) =>
     }
 
     const password = generatePassword();
-    await getAuth().updateUser(team.uid, { password });
+    const credentialsRef = db.collection('games').doc(gameId).collection('teamCredentials').doc(teamId);
+    const previousCredentials = await credentialsRef.get();
+    await credentialsRef.set({ password, updatedAt: FieldValue.serverTimestamp() });
+    try {
+      await getAuth().updateUser(team.uid, { password });
+    } catch (error) {
+      try {
+        if (previousCredentials.exists) {
+          await credentialsRef.set(previousCredentials.data());
+        } else {
+          await credentialsRef.delete();
+        }
+      } catch (rollbackError) {
+        logger.error('Password reset failed and stored credentials could not be restored.', {
+          gameId,
+          teamId,
+          adminUid,
+          rollbackError,
+        });
+      }
+      throw error;
+    }
 
     try {
       await db.collection('games').doc(gameId).collection('auditLog').add({

@@ -18,6 +18,7 @@ import { useBusyAction } from '../../hooks/useBusyAction';
 import { estimatedServerNow } from '../../lib/serverTime';
 import * as gameService from '../../services/gameService';
 import { pauseGame, resumeGame } from '../../services/gameService';
+import { StoredImage } from '../../components/StoredImage';
 import { awardPoints } from '../../services/scoreService';
 import { logAudit } from '../../services/auditService';
 import type { GameQuestion, MusicTrack, Question, QuestionType, Team } from '../../types';
@@ -340,10 +341,13 @@ function QuestionControl({
               Answer: {question.correctAnswer}
             </p>
           )}
+          {'imageUrl' in question && question.imageUrl && (
+            <StoredImage src={question.imageUrl} style={{ maxHeight: 220, borderRadius: 12 }} />
+          )}
           {'imageUrls' in question && (
             <div className="image-grid">
               {question.imageUrls.map((url) => (
-                <img key={url} src={url} alt="" />
+                <StoredImage key={url} src={url} />
               ))}
             </div>
           )}
