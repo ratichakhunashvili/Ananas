@@ -88,7 +88,17 @@ export function MusicPlayer({
     let cancelled = false;
     loadYouTubeApi().then(() => {
       if (cancelled || !containerRef.current || !window.YT) return;
-      playerRef.current = new window.YT.Player(containerRef.current, {
+      // The IFrame API replaces whatever element it's given with its own
+      // <iframe>, ripping it out of the DOM out from under React. Handing it
+      // containerRef.current directly meant React still believed that div
+      // existed when it later tried to remove it (end of round, next
+      // question, restart) and crashed with "Failed to execute 'removeChild'
+      // on 'Node'" - with no error boundary anywhere, that took down the
+      // entire Spectator screen. Giving YT a plain child node to replace
+      // instead keeps the React-owned container intact.
+      const mountNode = document.createElement('div');
+      containerRef.current.appendChild(mountNode);
+      playerRef.current = new window.YT.Player(mountNode, {
         videoId: providerId,
         playerVars: { autoplay: 0, controls: visible ? 1 : 0, start: Math.floor(startSeconds) },
         events: {
