@@ -230,9 +230,9 @@ export function TeamsTab({ gameId }: { gameId: string }) {
 
       <div className="grid grid-2">
         {teams.map((team) => (
-          <div key={team.id} className="card">
-            <div className="spread">
-              <div className="row">
+          <div key={team.id} className="card team-card">
+            <div className="spread team-card-heading">
+              <div className="row team-card-name">
                 <span
                   title={presence[team.id] ? 'Online now' : 'Not connected'}
                   style={{
@@ -242,12 +242,12 @@ export function TeamsTab({ gameId }: { gameId: string }) {
                     background: presence[team.id] ? 'var(--color-success)' : 'var(--color-border)',
                   }}
                 />
-                <div className="title-md">{team.name}</div>
+                <div className="title-md team-card-name-text">{team.name}</div>
               </div>
-              <div className="title-md">{team.score} pts</div>
+              <div className="title-md team-card-score">{team.score} pts</div>
             </div>
-            <div className="muted">Login: {team.username}</div>
-            <div className="muted" style={{ marginTop: 4 }}>
+            <div className="muted team-card-meta">Login: {team.username}</div>
+            <div className="muted team-card-meta" style={{ marginTop: 4 }}>
               Password:{' '}
               <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--color-text)' }}>
                 {teamCredentials[team.id] ?? 'Not stored — reset to set a password'}
@@ -279,7 +279,7 @@ export function TeamsTab({ gameId }: { gameId: string }) {
                 </div>
               </div>
             ) : (
-              <div className="row" style={{ marginTop: 10 }}>
+              <div className="team-card-actions" style={{ marginTop: 10 }}>
                 <button className="btn btn-sm btn-outline" onClick={() => setAdjustingId(team.id)}>
                   Adjust score
                 </button>
