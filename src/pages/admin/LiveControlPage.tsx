@@ -377,7 +377,7 @@ function QuestionControl({
                     disabled={busy}
                     onClick={guarded(() => gameService.reopenForNextAttempt(gameId, gq.id))}
                   >
-                    {question.type === 'MUSIC_GUESS' ? 'Continue Music' : 'Next Buzzer'}
+                    {question.type === 'MUSIC_GUESS' ? 'Resume Music' : 'Next Buzzer'}
                   </button>
                 ) : (
                   <span className="muted">Every team has had a turn.</span>

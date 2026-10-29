@@ -95,6 +95,7 @@ export default function SpectatorPage() {
                   startSeconds={live.karaoke.startSeconds}
                   playbackDurationSeconds={live.karaoke.durationSeconds}
                   shouldPlay={live.karaoke.playing}
+                  showPlayButton
                 />
               )}
             </div>

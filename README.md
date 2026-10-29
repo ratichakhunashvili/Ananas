@@ -194,6 +194,8 @@ normal, intended flow.
   audio locally, the room would turn into an out-of-sync echo chamber. If
   your setup instead has the Admin's laptop wired to the speakers, just open
   the Spectator view in a second tab on that machine.
+  If the browser blocks autoplay, click **Play audio** on the Spectator view;
+  the clip timer counts only actual playback.
 
 ## Known limitations
 

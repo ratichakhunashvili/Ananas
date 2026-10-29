@@ -59,6 +59,7 @@ export function NowPlayingCard({
           startSeconds={track!.startSeconds}
           playbackDurationSeconds={music.playbackDurationSeconds}
           shouldPlay={shouldPlay}
+          showPlayButton={audio === 'hidden'}
         />
       )}
       <p className="muted">{shouldPlay ? 'Listen carefully...' : 'Paused'}</p>
