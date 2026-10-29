@@ -117,6 +117,42 @@ export async function endGame(gameId: string, actorUid: string, actorName: strin
   await logAudit({ gameId, action: 'GAME_ENDED', actorUid, actorName });
 }
 
+export async function restartGame(gameId: string, actorUid: string, actorName: string): Promise<void> {
+  const [teamsSnap, gameQuestionsSnap] = await Promise.all([
+    getDocs(collection(db, 'games', gameId, 'teams')),
+    getDocs(collection(db, 'games', gameId, 'gameQuestions')),
+  ]);
+  const updates = [
+    ...teamsSnap.docs.map((teamDoc) => ({
+      ref: teamDoc.ref,
+      data: { score: 0 },
+    })),
+    ...gameQuestionsSnap.docs.map((questionDoc) => ({
+      ref: questionDoc.ref,
+      data: { status: 'WAITING' as const },
+    })),
+  ];
+
+  for (let index = 0; index < updates.length; index += 450) {
+    const batch = writeBatch(db);
+    updates.slice(index, index + 450).forEach(({ ref: docRef, data }) => batch.update(docRef, data));
+    await batch.commit();
+  }
+
+  await Promise.all([
+    remove(ref(rtdb, `liveGames/${gameId}`)),
+    remove(ref(rtdb, `liveMusic/${gameId}`)),
+  ]);
+  await updateDoc(doc(db, 'games', gameId), {
+    status: 'LOBBY',
+    startedAt: null,
+    pausedAt: null,
+    endedAt: null,
+    currentGameQuestionId: null,
+  });
+  await logAudit({ gameId, action: 'GAME_RESTARTED', actorUid, actorName });
+}
+
 /**
  * Permanently removes a game and everything scoped to it (teams and their
  * logins, selected questions, score/audit history, live session state).

@@ -2,7 +2,15 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useGame, useGameQuestions, usePresence, useTeams } from '../../hooks/dataHooks';
-import { endGame, pauseGame, resetRosterIndexForGame, resumeGame, startGame, updateGameName } from '../../services/gameService';
+import {
+  endGame,
+  pauseGame,
+  resetRosterIndexForGame,
+  restartGame,
+  resumeGame,
+  startGame,
+  updateGameName,
+} from '../../services/gameService';
 import { TeamsTab } from './tabs/TeamsTab';
 import { QuestionsTab } from './tabs/QuestionsTab';
 import { ScoreHistoryTab } from './tabs/ScoreHistoryTab';
@@ -63,6 +71,23 @@ export default function GameWorkspacePage() {
     }
   }
 
+  async function handleRestart() {
+    if (
+      !profile ||
+      !confirm('Restart this homework? Team scores and question progress will be reset. Score history will be kept.')
+    ) {
+      return;
+    }
+    setBusy(true);
+    try {
+      await restartGame(gameId!, profile.uid, profile.displayName);
+    } catch (error) {
+      window.alert(`Could not restart homework: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="stack">
       <div className="spread">
@@ -97,6 +122,11 @@ export default function GameWorkspacePage() {
                 End homework
               </button>
             </>
+          )}
+          {game.status === 'FINISHED' && (
+            <button className="btn btn-primary" onClick={handleRestart} disabled={busy}>
+              Restart homework
+            </button>
           )}
         </div>
       </div>

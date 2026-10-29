@@ -174,6 +174,7 @@ export type AuditAction =
   | 'GAME_PAUSED'
   | 'GAME_RESUMED'
   | 'GAME_ENDED'
+  | 'GAME_RESTARTED'
   | 'QUESTION_STARTED'
   | 'QUESTION_ENDED'
   | 'TEAM_BUZZED'
