@@ -32,7 +32,7 @@ export default function SpectatorPage() {
   const buzzerWindow = currentQuestion ? live?.buzzer?.[currentQuestion.gameQuestionId] : null;
   const claim = buzzerWindow?.claim ?? null;
   const claimTeam = claim ? teams.find((t) => t.id === claim.teamId) : null;
-  const musicShouldPlay = Boolean(live?.music?.active) && !claim;
+  const musicShouldPlay = Boolean(live?.music?.playing) && !claim;
   const freezeRemainingMs = freezeRemainingMsForClaim(currentQuestion?.endsAt, claim?.at);
 
   if (!game) {

@@ -300,7 +300,7 @@ function QuestionControl({
   const claimAttempt = claim ? attempts[claim.teamId] : null;
   const attemptedCount = Object.keys(attempts).length;
   const noTeamsRemain = teams.length > 0 && attemptedCount >= teams.length;
-  const musicShouldPlay = question.type === 'MUSIC_GUESS' && !claim;
+  const musicShouldPlay = Boolean(music?.playing) && !claim;
   const isResolved = liveQuestion?.status === 'COMPLETED' || liveQuestion?.status === 'TIME_EXPIRED';
 
   const guarded = (fn: () => Promise<unknown>) => () =>
@@ -325,13 +325,24 @@ function QuestionControl({
       />
 
       {question.type === 'MUSIC_GUESS' && music ? (
-        <NowPlayingCard
-          music={music}
-          track={musicTrack}
-          shouldPlay={musicShouldPlay}
-          audio="none"
-          revealTrackInfo
-        />
+        <>
+          <NowPlayingCard
+            music={music}
+            track={musicTrack}
+            shouldPlay={musicShouldPlay}
+            audio="none"
+            revealTrackInfo
+          />
+          <MusicControls
+            gameId={gameId}
+            gqId={gq.id}
+            music={music}
+            timerSeconds={question.timerSeconds}
+            playbackDurationSeconds={question.playbackDurationSeconds}
+            defaultStartSeconds={question.startSeconds}
+            onError={onError}
+          />
+        </>
       ) : (
         <>
           {'text' in question && question.text && <p className="title-md">{question.text}</p>}
@@ -449,6 +460,83 @@ function QuestionControl({
         })}
       </div>
     </div>
+  );
+}
+
+/**
+ * The music round is armed (card showing, buzzer closed, clock stopped) as
+ * soon as it's started from the queue, but nothing plays and nothing is
+ * timed until Admin actually turns it on here - see
+ * gameService.startMusicPlayback. That also doubles as the moment to pick
+ * where in the track playback should begin, overriding the question's
+ * configured default for just this round.
+ */
+function MusicControls({
+  gameId,
+  gqId,
+  music,
+  timerSeconds,
+  playbackDurationSeconds,
+  defaultStartSeconds,
+  onError,
+}: {
+  gameId: string;
+  gqId: string;
+  music: LiveMusicState;
+  timerSeconds: number | null;
+  playbackDurationSeconds: number | null;
+  defaultStartSeconds: number;
+  onError: (message: string) => void;
+}) {
+  const [busy, run] = useBusyAction();
+  const [startSeconds, setStartSeconds] = useState(defaultStartSeconds);
+  // RTDB drops a key written as null rather than storing it, so an unstarted
+  // round's playbackStartedAt comes back as undefined here, not null.
+  const started = typeof music.playbackStartedAt === 'number';
+
+  const guarded = (fn: () => Promise<unknown>) => () =>
+    run(async () => {
+      try {
+        await fn();
+      } catch (e) {
+        onError(e instanceof Error ? e.message : 'That action failed. Nothing was changed.');
+      }
+    });
+
+  if (!started) {
+    return (
+      <div className="row" style={{ alignItems: 'flex-end' }}>
+        <div className="field" style={{ margin: 0 }}>
+          <label>Start at (seconds)</label>
+          <input
+            type="number"
+            min={0}
+            value={startSeconds}
+            onChange={(e) => setStartSeconds(Number(e.target.value))}
+            style={{ width: 100 }}
+          />
+        </div>
+        <button
+          className="btn btn-primary"
+          disabled={busy}
+          onClick={guarded(() =>
+            gameService.startMusicPlayback(gameId, gqId, timerSeconds, playbackDurationSeconds, startSeconds)
+          )}
+        >
+          ▶ Turn music on
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      className={`btn ${music.playing ? 'btn-outline' : 'btn-primary'}`}
+      disabled={busy}
+      onClick={guarded(() => gameService.toggleMusicPlayback(gameId, !music.playing))}
+    >
+      {music.playing ? '⏸ Turn music off' : '▶ Turn music on'}
+    </button>
   );
 }
 

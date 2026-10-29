@@ -343,23 +343,34 @@ export async function startQuestion(
     throw new Error('Problem cases use startProblemCase, not startQuestion.');
   }
 
+  const isMusic = question.type === 'MUSIC_GUESS';
+
   // Resolve stored images first, so fetching them doesn't eat into the timer
   // (startedAt/endsAt are stamped inside buildSanitizedQuestion).
   const liveQuestion = buildSanitizedQuestion(gq, await withResolvedImages(question), categoryName);
 
+  // A music round is only "armed" here, not started: the clock and buzzer
+  // wait for startMusicPlayback, once Admin actually turns the music on.
+  // Starting them immediately ran the timer silently while the Spectator
+  // screen's audio was still blocked or buffering, making the round look
+  // desynced or dead.
+  if (isMusic) {
+    liveQuestion.startedAt = null;
+    liveQuestion.endsAt = null;
+  }
+
   const updates: Record<string, unknown> = {
     currentQuestion: liveQuestion,
-    [`buzzer/${gq.id}`]: { open: true },
+    [`buzzer/${gq.id}`]: { open: !isMusic },
   };
 
-  if (question.type === 'MUSIC_GUESS' && track) {
-    const now2 = estimatedServerNow();
+  if (isMusic && track) {
     const musicState: LiveMusicState = {
       active: true,
       gameQuestionId: gq.id,
-      playing: true,
-      playbackToken: now2,
-      playbackStartedAt: now2,
+      playing: false,
+      playbackToken: 0,
+      playbackStartedAt: null,
       playbackDurationSeconds: question.playbackDurationSeconds,
     };
     updates.music = musicState;
@@ -383,6 +394,42 @@ export async function startQuestion(
   await update(ref(rtdb, `liveGames/${gameId}`), updates);
   await updateDoc(doc(db, 'games', gameId), { currentGameQuestionId: gq.id });
   await setGameQuestionStatus(gameId, gq.id, 'ACTIVE');
+}
+
+/**
+ * Turns a music round's playback on for the first time: picks the clip's
+ * start position, opens the buzzer, and starts the question clock - all at
+ * the moment sound actually begins, not when Admin clicked "Start" on the
+ * round. Call `toggleMusicPlayback` instead once this has already run once
+ * (`music.playbackStartedAt` is no longer null).
+ */
+export async function startMusicPlayback(
+  gameId: string,
+  gqId: string,
+  timerSeconds: number | null,
+  playbackDurationSeconds: number | null,
+  startSeconds: number
+): Promise<void> {
+  const now = estimatedServerNow();
+  await update(ref(rtdb, `liveMusic/${gameId}`), { startSeconds });
+  await update(ref(rtdb, `liveGames/${gameId}`), {
+    music: {
+      active: true,
+      gameQuestionId: gqId,
+      playing: true,
+      playbackToken: now,
+      playbackStartedAt: now,
+      playbackDurationSeconds,
+    },
+    'currentQuestion/startedAt': now,
+    'currentQuestion/endsAt': timerSeconds ? now + timerSeconds * 1000 : null,
+    [`buzzer/${gqId}/open`]: true,
+  });
+}
+
+/** Pauses/resumes a music round already in progress, without touching the clock. */
+export async function toggleMusicPlayback(gameId: string, playing: boolean): Promise<void> {
+  await update(ref(rtdb, `liveGames/${gameId}/music`), { playing });
 }
 
 export async function markCorrect(

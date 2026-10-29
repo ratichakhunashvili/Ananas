@@ -30,7 +30,14 @@ export function NowPlayingCard({
   audio?: 'visible' | 'hidden' | 'none';
   revealTrackInfo?: boolean;
 }) {
-  const canPlay = audio !== 'none' && !!track?.providerId;
+  // Nothing actually plays until Admin turns the music on (see
+  // gameService.startMusicPlayback) - before that, playbackStartedAt is
+  // still null and this just shows the round is armed and waiting. RTDB
+  // drops a key written as null rather than storing it, so it comes back
+  // here as undefined, not null - check for a real number, not just "not
+  // null".
+  const started = typeof music.playbackStartedAt === 'number';
+  const canPlay = audio !== 'none' && !!track?.providerId && started;
 
   return (
     <div className="card" style={{ textAlign: 'center' }}>
@@ -50,7 +57,9 @@ export function NowPlayingCard({
           visible
         />
       ) : (
-        <div style={{ fontSize: '3rem', margin: '14px 0' }}>{shouldPlay ? '🔊' : '⏸️'}</div>
+        <div style={{ fontSize: '3rem', margin: '14px 0' }}>
+          {!started ? '🎵' : shouldPlay ? '🔊' : '⏸️'}
+        </div>
       )}
       {audio === 'hidden' && canPlay && (
         <MusicPlayer
@@ -62,7 +71,7 @@ export function NowPlayingCard({
           showPlayButton={audio === 'hidden'}
         />
       )}
-      <p className="muted">{shouldPlay ? 'Listen carefully...' : 'Paused'}</p>
+      <p className="muted">{!started ? 'Waiting for music to start...' : shouldPlay ? 'Listen carefully...' : 'Paused'}</p>
     </div>
   );
 }
